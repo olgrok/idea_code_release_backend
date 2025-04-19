@@ -1,0 +1,52 @@
+<!-- booking_attempt_form.html -->
+<form id="bookingAttemptForm">
+  <h2>Новая заявка на бронирование</h2>
+
+  <div>
+    <label for="room">Аудитория:</label>
+    <select id="room" name="room" required>
+      <!-- Заполняется динамически, например, из Django context -->
+      {% for room in rooms %}
+      <option value="{{ room.id }}">{{ room.name }} ({{ room.building }})</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="start_slot">Начальный слот:</label>
+    <select id="start_slot" name="start_slot" required>
+      <!-- Заполняется динамически, например, из Django context -->
+      {% for slot in available_slots %}
+        <option value="{{ slot.id }}">{{ slot }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="end_slot">Конечный слот:</label>
+    <select id="end_slot" name="end_slot" required>
+      <!-- Заполняется динамически, например, из Django context -->
+      {% for slot in available_slots %}
+        <option value="{{ slot.id }}">{{ slot }}</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <div>
+    <label for="total_bid">Общая ставка (ББ):</label>
+    <input type="number" id="total_bid" name="total_bid" min="1" required>
+  </div>
+
+  <div>
+    <label for="funding_group">Группа финансирования (необязательно):</label>
+    <select id="funding_group" name="funding_group">
+      <option value="">-- Личная ставка --</option>
+      <!-- Заполняется динамически, например, из Django context -->
+      {% for group in user_groups %}
+        <option value="{{ group.id }}">{{ group.name }} (Баланс: {{ group.current_balance }})</option>
+      {% endfor %}
+    </select>
+  </div>
+
+  <button type="submit">Сделать ставку</button>
+</form>

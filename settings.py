@@ -1,0 +1,1 @@
+AUTH_USER_MODEL = 'main.User' # Замените 'main.User' на правильный путь, если нужно 

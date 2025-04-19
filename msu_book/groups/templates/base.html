@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Система Бронирования МГУ{% endblock %}</title>
+    <!-- Сюда можно добавить ссылки на CSS фреймворки или свои стили -->
+    <style>
+        body { font-family: sans-serif; margin: 20px; }
+        nav ul { list-style: none; padding: 0; }
+        nav ul li { display: inline; margin-right: 15px; }
+        .messages { list-style: none; padding: 10px; margin-bottom: 15px; border: 1px solid #ccc; }
+        .messages .success { border-color: green; color: green; }
+        .messages .error { border-color: red; color: red; }
+        .messages .warning { border-color: orange; color: orange; }
+        .messages .info { border-color: blue; color: blue; }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>Система Бронирования Аудиторий</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Главная</a></li>
+                <!-- Добавь ссылки на другие разделы (аудитории, мои бронирования, мои группы и т.д.) -->
+                 <li><a href="{% url 'groups:create_group' %}">Создать группу</a></li>
+                 <li><a href="{% url 'admin:index' %}">Админка</a></li>
+                {% if user.is_authenticated %}
+                    <li>Привет, {{ user.username }}! (<a href="#">Выйти</a>)</li>
+                     <li>Мои баллы: (нужно добавить получение User из main.models)</li>
+                {% else %}
+                    <li><a href="#">Войти</a></li>
+                    <li><a href="#">Регистрация</a></li>
+                {% endif %}
+            </ul>
+        </nav>
+    </header>
+
+    <hr>
+
+    <main>
+        {% if messages %}
+            <ul class="messages">
+                {% for message in messages %}
+                    <li{% if message.tags %} class="{{ message.tags }}"{% endif %}>{{ message }}</li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+
+        {% block content %}
+        <!-- Сюда будет подставляться содержимое дочерних шаблонов -->
+        {% endblock %}
+    </main>
+
+    <hr>
+
+    <footer>
+        <p>&copy; {% now "Y" %} Факультет ВМК МГУ</p>
+    </footer>
+
+    <!-- Сюда можно добавить ссылки на JS файлы -->
+
+</body>
+</html>

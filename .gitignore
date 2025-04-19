@@ -1,7 +1,9 @@
 # Byte-compiled / optimized / DLL files
+.env
 __pycache__/
 *.py[cod]
 *$py.class
+.cursorignore
 
 # C extensions
 *.so
@@ -166,9 +168,14 @@ cython_debug/
 #  and can be added to the global gitignore or merged into this file.  For a more nuclear
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
-
+.idea
 # Ruff stuff:
 .ruff_cache/
 
 # PyPI configuration file
 .pypirc
+
+# django migrations
+migrations
+# Cursor
+.cursorignore

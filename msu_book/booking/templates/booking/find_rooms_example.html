@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Поиск Аудиторий для Бронирования</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+            background-color: #f9f9f9;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: auto;
+            background-color: #fff;
+            padding: 25px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2 {
+            color: #2c3e50;
+            border-bottom: 2px solid #3498db;
+            padding-bottom: 5px;
+            margin-bottom: 15px;
+        }
+        form label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        form input[type="number"],
+        form input[type="date"] {
+            width: calc(100% - 22px); /* Учитываем padding и border */
+            padding: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            box-sizing: border-box; /* Важно для расчета ширины */
+        }
+        form button {
+            background-color: #3498db;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s ease;
+        }
+        form button:hover {
+            background-color: #2980b9;
+        }
+        .room-list {
+            margin-top: 25px;
+            border-top: 1px solid #eee;
+            padding-top: 15px;
+        }
+        .room-item {
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            transition: box-shadow 0.3s ease;
+        }
+        .room-item:hover {
+            box-shadow: 0 1px 6px rgba(0, 0, 0, 0.1);
+        }
+        .room-item.occupied {
+            background-color: #f8f8f8;
+            border-left: 5px solid #e74c3c; /* Красный маркер для занятых */
+        }
+        .room-item.available {
+            background-color: #f0fff0;
+            border-left: 5px solid #2ecc71; /* Зеленый маркер для доступных */
+        }
+        .room-item strong {
+            display: inline-block;
+            min-width: 120px;
+            color: #555;
+        }
+        .room-details p {
+            margin: 5px 0;
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            font-weight: bold;
+            color: white;
+            margin-left: 10px;
+        }
+        .status-available { background-color: #2ecc71; }
+        .status-occupied { background-color: #e74c3c; }
+
+        .loading, .error, .no-results {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            color: #777;
+        }
+        .error { color: #e74c3c; font-weight: bold; }
+        .loading { color: #3498db; }
+
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Поиск свободных аудиторий</h1>
+
+    <form id="find-rooms-form">
+        <div>
+            <label for="floor">Этаж:</label>
+            <input type="number" id="floor" name="floor" required min="0" max="15" value="5">
+        </div>
+
+        <div>
+            <label for="date">Дата:</label>
+            {# Используем filter date для форматирования, если передали из view #}
+            <input type="date" id="date" name="date" required value="{{ today_date|date:'Y-m-d' }}">
+        </div>
+
+        <div>
+            <label for="start_slot">Начальный слот (1-14):</label>
+            <input type="number" id="start_slot" name="start_slot" required min="1" max="14" value="3">
+        </div>
+
+        <div>
+            <label for="end_slot">Конечный слот (1-14):</label>
+            <input type="number" id="end_slot" name="end_slot" required min="1" max="14" value="4">
+        </div>
+
+        <button type="submit">Найти аудитории</button>
+    </form>
+
+    <h2>Результаты поиска:</h2>
+    <div id="results" class="room-list">
+        <p class="no-results">Введите параметры и нажмите "Найти аудитории".</p>
+    </div>
+</div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const form = document.getElementById('find-rooms-form');
+        const resultsDiv = document.getElementById('results');
+        const dateInput = document.getElementById('date');
+
+        // Установить сегодняшнюю дату, если она не была установлена сервером
+        if (!dateInput.value) {
+            const today = new Date().toISOString().split('T')[0];
+            dateInput.value = today;
+        }
+
+        // URL вашего API эндпоинта. Используйте тег {% url %} для динамического получения URL
+        // если этот HTML рендерится Django view. Если нет - укажите абсолютный путь.
+        const findRoomsUrlBase = "{% url 'booking:ajax_find_rooms' %}"; // Пример с Django URL тегом
+        // const findRoomsUrlBase = '/booking/find_rooms/'; // Альтернатива - жестко заданный путь
+
+        form.addEventListener('submit', function(event) {
+            event.preventDefault(); // Остановить стандартную отправку
+
+            const floor = document.getElementById('floor').value;
+            const date = dateInput.value;
+            const startSlot = document.getElementById('start_slot').value;
+            const endSlot = document.getElementById('end_slot').value;
+
+            // Простая клиентская валидация
+            if (!floor || !date || !startSlot || !endSlot) {
+                resultsDiv.innerHTML = '<p class="error">Пожалуйста, заполните все поля.</p>';
+                return;
+            }
+             if (parseInt(startSlot) > parseInt(endSlot)) {
+                resultsDiv.innerHTML = '<p class="error">Начальный слот не может быть позже конечного.</p>';
+                return;
+            }
+            if (parseInt(startSlot) < 1 || parseInt(startSlot) > 14 || parseInt(endSlot) < 1 || parseInt(endSlot) > 14) {
+                resultsDiv.innerHTML = '<p class="error">Номера слотов должны быть от 1 до 14.</p>';
+                return;
+            }
+
+
+            resultsDiv.innerHTML = '<p class="loading">Идет поиск...</p>';
+
+            // Формирование URL с параметрами
+            const queryParams = new URLSearchParams({
+                floor: floor,
+                date: date,
+                start_slot: startSlot,
+                end_slot: endSlot
+            });
+            const fullUrl = `${findRoomsUrlBase}?${queryParams.toString()}`;
+
+            // Отправка запроса
+            fetch(fullUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        // Попытка извлечь текст ошибки из JSON ответа сервера
+                        return response.json().then(errData => {
+                             // Используем сообщение об ошибке от сервера, если оно есть
+                            throw new Error(errData.error || `Ошибка ${response.status}: ${response.statusText}`);
+                        }).catch(() => {
+                            // Если тело ответа не JSON или пустое
+                            throw new Error(`Ошибка ${response.status}: ${response.statusText}`);
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    renderResults(data); // Вызов функции для отображения результатов
+                })
+                .catch(error => {
+                    console.error('Ошибка при выполнении запроса:', error);
+                    resultsDiv.innerHTML = `<p class="error">Не удалось загрузить данные: ${error.message}</p>`;
+                });
+        });
+
+        // Функция для отображения результатов
+        function renderResults(data) {
+            resultsDiv.innerHTML = ''; // Очистка предыдущих результатов
+
+            if (!data.rooms || data.rooms.length === 0) {
+                resultsDiv.innerHTML = '<p class="no-results">Аудитории не найдены по вашему запросу.</p>';
+                return;
+            }
+
+            data.rooms.forEach(room => {
+                const roomDiv = document.createElement('div');
+                roomDiv.classList.add('room-item');
+                const isAvailable = room.is_available_for_range;
+                roomDiv.classList.add(isAvailable ? 'available' : 'occupied');
+
+                let featuresStr = 'Не указаны';
+                if (room.features && typeof room.features === 'object' && Object.keys(room.features).length > 0) {
+                    featuresStr = Object.entries(room.features)
+                                     .map(([key, value]) => `${key}: ${value}`)
+                                     .join(', ');
+                } else if (typeof room.features === 'string' && room.features.length > 0) {
+                    featuresStr = room.features; // Если вдруг приходит строка
+                }
+
+                const statusText = isAvailable ? 'Доступна для бронирования' : 'Занята или недоступна';
+                const statusClass = isAvailable ? 'status-available' : 'status-occupied';
+
+                roomDiv.innerHTML = `
+                    <h3>${room.name} <span class="status-badge ${statusClass}">${statusText}</span></h3>
+                    <div class="room-details">
+                        <p><strong>Корпус:</strong> ${room.building}</p>
+                        <p><strong>Этаж:</strong> ${room.floor}</p>
+                        <p><strong>Тип:</strong> ${room.room_type}</p>
+                        <p><strong>Вместимость:</strong> ${room.capacity} чел.</p>
+                        <p><strong>Особенности:</strong> ${featuresStr}</p>
+                    </div>
+                    ${isAvailable ? '<button onclick="initiateBooking(' + room.id + ')">Забронировать</button>' : ''}
+                `;
+                // Кнопка "Забронировать" добавлена условно, ей нужна своя логика
+
+                resultsDiv.appendChild(roomDiv);
+            });
+        }
+    }); // Конец DOMContentLoaded
+
+    // Заглушка для функции бронирования (нужно реализовать)
+    function initiateBooking(roomId) {
+        alert(`Запрос на бронирование аудитории с ID: ${roomId}. (Функционал не реализован)`);
+        // Здесь должен быть код, который, например, перенаправляет на страницу
+        // детального бронирования или открывает модальное окно для ввода ставки,
+        // передавая ID комнаты, дату и слоты.
+    }
+
+</script>
+
+</body>
+</html>

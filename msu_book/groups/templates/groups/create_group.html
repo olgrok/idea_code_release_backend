@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+
+{% block title %}Создание группы бронирования{% endblock %}
+
+{% block content %}
+    <h2>Создать новую группу</h2>
+    <p>Вы станете администратором этой группы и будете добавлены в её участники.</p>
+
+    <form method="post" action="{% url 'groups:create_group' %}">
+        {% csrf_token %}
+        {{ form.as_p }}
+        <button type="submit">Создать группу</button>
+    </form>
+
+    <hr>
+    <a href="#">Вернуться назад</a>
+{% endblock %}
