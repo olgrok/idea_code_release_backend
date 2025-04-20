@@ -59,27 +59,28 @@ class IsInitiator(permissions.BasePermission):
 class BookingGroupViewSet(viewsets.ModelViewSet):
     """
     API endpoint for managing Booking Groups.
-    PUT and PATCH methods are disabled and not visible.
-    Includes actions for adding/removing members.
+    Includes actions for initiator to add/remove members,
+    and for members to leave the group.
     """
     serializer_class = BookingGroupSerializer
     permission_classes = [IsAuthenticated, IsInitiatorOrReadOnly]
-
-    # Explicitly define allowed HTTP methods, excluding 'put' and 'patch'
-    # This makes PUT and PATCH methods effectively invisible and unusable.
     http_method_names = ['get', 'post', 'delete', 'head', 'options']
 
     def get_queryset(self):
         """
         Users can only see groups they are members of.
+        (Reverted to previous version)
         """
         user = self.request.user
+        # Re-added the lookup for the User instance based on request.user.id
+        # Ensure this lookup is correct based on your User model structure
         user = User.objects.get(user_id=user.id)
+        # Reverted the check back to `if user:`
         if user:
+            # Assuming 'booking_groups' is the correct related name
             return user.booking_groups.all().prefetch_related('members', 'initiator')
         return BookingGroup.objects.none()
 
-    # Pass request context to serializer for setting initiator
     def get_serializer_context(self):
         context = super().get_serializer_context()
         context.update({"request": self.request})
@@ -112,7 +113,7 @@ class BookingGroupViewSet(viewsets.ModelViewSet):
 
         # Add user to the group's members
         group.members.add(user_to_add)
-        group.save() # Save the group instance to persist the membership change
+        # group.save() # Usually not needed for M2M add/remove unless other fields change
 
         return Response({'status': f'Пользователь {user_to_add.email} добавлен в группу.'}, status=status.HTTP_200_OK)
 
@@ -123,7 +124,7 @@ class BookingGroupViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsInitiator], url_path='remove-member')
     def remove_member(self, request, pk=None):
         """
-        Removes a user from the group (Initiator only).
+        Removes a specified user from the group (Initiator only).
         Returns the removed user's contribution back to their balance.
         """
         group = self.get_object()
@@ -132,75 +133,150 @@ class BookingGroupViewSet(viewsets.ModelViewSet):
         user_id_to_remove = serializer.validated_data['user_id']
 
         try:
+            # Get the user object specified in the request data
             user_to_remove = User.objects.get(user_id=user_id_to_remove)
         except User.DoesNotExist:
             return Response({"detail": "Пользователь не найден."}, status=status.HTTP_404_NOT_FOUND)
 
-        # Check if the user to remove is the initiator
+        # Check if the user to remove is the initiator - initiator cannot remove self via this endpoint
         if user_to_remove == group.initiator:
-            return Response({"detail": "Нельзя удалить инициатора группы."}, status=status.HTTP_400_BAD_REQUEST)
+             # Initiator should use the 'leave' endpoint or delete the group
+            return Response({"detail": "Инициатор не может удалить себя этим методом."}, status=status.HTTP_400_BAD_REQUEST)
+             # Or maybe: return Response({"detail": "Для удаления себя используйте эндпоинт 'leave'."}, status=status.HTTP_400_BAD_REQUEST)
 
         # Check if user is actually in the group before starting transaction
         if user_to_remove not in group.members.all():
-            return Response({"detail": "Пользователь не является участником этой группы."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": "Указанный пользователь не является участником этой группы."}, status=status.HTTP_400_BAD_REQUEST)
 
         # --- Start Transaction ---
         try:
             with transaction.atomic():
-                # 1. Find the contribution amount (if any) - lock the user first
+                # Lock the user account being removed
                 user_account = User.objects.select_for_update().get(pk=user_to_remove.pk)
                 contribution_amount = 0
                 try:
-                    # Use select_for_update if you need to lock the contribution row as well,
-                    # but it might be deleted, so getting the amount might be enough.
                     contribution = GroupContribution.objects.get(group=group, user=user_account)
                     contribution_amount = contribution.amount
                 except GroupContribution.DoesNotExist:
-                    # User was a member but had no contribution, that's okay.
-                    pass
+                    pass # No contribution to return
 
-                # 2. Remove user from the group's members
+                # Remove user from the group's members
                 group.members.remove(user_account)
-                # group.save() might not be strictly needed for M2M unless other fields change
 
                 points_returned = 0
                 if contribution_amount > 0:
-                    # 3. Increase user points
+                    # Increase user points
                     user_account.booking_points += contribution_amount
-                    # Consider potential point limits if necessary
-                    # user_account.booking_points = min(user_account.booking_points, MAX_POINTS)
                     user_account.save(update_fields=['booking_points'])
                     points_returned = contribution_amount
 
-                    # 4. Log transaction for points return
+                    # Log transaction for points return
                     PointTransaction.objects.create(
                         user=user_account,
-                        amount=contribution_amount, # Positive for user balance change
-                        transaction_type=PointTransaction.TransactionType.GROUP_WITHDRAWAL, # Reuse or create new type
+                        amount=contribution_amount,
+                        transaction_type=PointTransaction.TransactionType.GROUP_WITHDRAWAL,
                         related_group=group,
-                        description=f"Возврат {contribution_amount} ББ при удалении из группы '{group.name}' ({group.pk})"
+                        description=f"Возврат {contribution_amount} ББ при удалении из группы '{group.name}' ({group.pk}) инициатором"
                     )
 
-                    # 5. Delete contribution record (if it existed)
-                    # This can be done after the transaction or at the end
-                    if 'contribution' in locals(): # Check if contribution object was found
+                    # Delete contribution record
+                    if 'contribution' in locals():
                         contribution.delete()
 
-                # Success message depends on whether points were returned
+                # Success message
+                status_message = f'Пользователь {user_account.email} удален из группы инициатором.'
                 if points_returned > 0:
-                    status_message = (f'Пользователь {user_account.email} удален из группы. '
-                                      f'Возвращено {points_returned} ББ на его счет.')
-                else:
-                    status_message = f'Пользователь {user_account.email} удален из группы (вклад отсутствовал).'
+                    status_message += f' Возвращено {points_returned} ББ на его счет.'
 
                 return Response({'status': status_message}, status=status.HTTP_200_OK)
 
         except IntegrityError:
              return Response({"detail": "Ошибка транзакции при удалении пользователя, попробуйте еще раз."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         except Exception as e:
-             # Log the error e (important for debugging)
-             print(f"Error during member removal: {e}") # Basic logging
+             print(f"Error during member removal by initiator: {e}")
              return Response({"detail": "Произошла внутренняя ошибка при удалении пользователя."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    # --- New Action for Leaving Group ---
+    @extend_schema(
+        request=None, # No request body needed
+        responses={200: serializers.Serializer}
+    )
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated, IsGroupMember], url_path='leave')
+    def leave_group(self, request, pk=None):
+        """ Allows a group member (non-initiator) to leave the group. """
+        group = self.get_object() # Get the BookingGroup instance
+
+        try:
+            # Explicitly get the User instance corresponding to the request user
+            # Assuming 'user_id' is the field linking auth user to your User model
+            user_leaving = User.objects.get(user_id=request.user.id)
+        except User.DoesNotExist:
+            # Should not happen if IsAuthenticated worked, but good practice
+            return Response({"detail": "Не удалось найти данные пользователя."}, status=status.HTTP_404_NOT_FOUND)
+        except AttributeError:
+             # Handle cases where request.user might not have .id (e.g., AnonymousUser, though IsAuthenticated should prevent this)
+             return Response({"detail": "Ошибка при получении ID пользователя."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+        # CRUCIAL CHECK: Initiator cannot leave the group using this method
+        if user_leaving == group.initiator:
+            return Response({"detail": "Инициатор не может покинуть группу. Группу можно только удалить."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Permission IsGroupMember already checked that the user is a member
+
+        # --- Start Transaction ---
+        try:
+            with transaction.atomic():
+                # Lock the user account leaving (using the correct User instance)
+                user_account = User.objects.select_for_update().get(pk=user_leaving.pk)
+                contribution_amount = 0
+                contribution_instance = None # Keep track of the contribution instance
+
+                try:
+                    # Find contribution using the correct User instance
+                    contribution_instance = GroupContribution.objects.get(group=group, user=user_account)
+                    contribution_amount = contribution_instance.amount
+                except GroupContribution.DoesNotExist:
+                    pass # No contribution to return
+
+                # Remove the user (self) from the group's members using the correct User instance
+                group.members.remove(user_account)
+
+                points_returned = 0
+                if contribution_amount > 0:
+                    # Increase user points on the correct User instance
+                    user_account.booking_points += contribution_amount
+                    user_account.save(update_fields=['booking_points'])
+                    points_returned = contribution_amount
+
+                    # Log transaction for points return using the correct User instance
+                    PointTransaction.objects.create(
+                        user=user_account,
+                        amount=contribution_amount,
+                        transaction_type=PointTransaction.TransactionType.GROUP_WITHDRAWAL, # Reusing this type
+                        related_group=group,
+                        description=f"Возврат {contribution_amount} ББ при выходе из группы '{group.name}' ({group.pk})"
+                    )
+
+                    # Delete contribution record if it existed
+                    if contribution_instance:
+                        contribution_instance.delete()
+
+                # Success message
+                status_message = 'Вы успешно покинули группу.'
+                if points_returned > 0:
+                    status_message += f' Возвращено {points_returned} ББ на ваш счет.'
+
+                return Response({'status': status_message}, status=status.HTTP_200_OK)
+
+        except IntegrityError:
+             return Response({"detail": "Ошибка транзакции при выходе из группы, попробуйте еще раз."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        except Exception as e:
+             # Log the actual error for debugging
+             print(f"Error during leaving group (User ID: {request.user.id if hasattr(request.user, 'id') else 'N/A'}): {e}")
+             # Consider using proper logging: import logging; logger = logging.getLogger(__name__); logger.exception(...)
+             return Response({"detail": "Произошла внутренняя ошибка при выходе из группы."}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class GroupContributionViewSet(viewsets.GenericViewSet): # Use GenericViewSet for custom actions

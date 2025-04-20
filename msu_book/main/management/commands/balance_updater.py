@@ -28,4 +28,3 @@ class Command(BaseCommand):
         bookings = BookingAttempt.objects.filter(status=BookingAttemptStatus.LOST)
         for booking in bookings:
             booking.delete()
-        self.stdout.write(self.style.SUCCESS('Успешно обновлено %s объектов' % objects_to_update.count()))

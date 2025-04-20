@@ -14,6 +14,7 @@ class User(models.Model):
     user_id = models.BigIntegerField(unique=True, blank=False)
     first_name = models.CharField(max_length=30, blank=False)
     second_name = models.CharField(max_length=30, blank=False)
+    telegram_username = models.CharField(max_length=50, blank=True)
     email = models.EmailField(max_length=256, unique=True)
     role = models.CharField(
         max_length=10,
@@ -420,3 +421,44 @@ class PointTransaction(models.Model):
     def __str__(self):
         sign = '+' if self.amount > 0 else ''
         return f"{self.timestamp.strftime('%Y-%m-%d %H:%M')} - {self.user.email}: {sign}{self.amount} ББ ({self.get_transaction_type_display()})"
+
+
+class Event(models.Model):
+    """Представляет собой событие, запланированное в определенной аудитории на определенное время."""
+    date = models.DateField(db_index=True)
+    start_slot = models.IntegerField(
+        choices=TimeSlotNumberChoices.choices,
+        db_index=True
+    )
+    end_slot = models.IntegerField(
+        choices=TimeSlotNumberChoices.choices,
+        db_index=True
+    )
+    initiator = models.ForeignKey(User, on_delete=models.CASCADE, related_name='initiated_events')
+    booking_attempt = models.ForeignKey(BookingAttempt, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
+    group = models.ForeignKey(BookingGroup, on_delete=models.SET_NULL, null=True, blank=True, related_name='events')
+    room = models.ForeignKey(Room, on_delete=models.CASCADE, null=True, blank=True, related_name='events')
+    subject = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    description = models.TextField(null=True, blank=True)
+    class Meta:
+        ordering = ['date', 'start_slot']
+        indexes = [
+            models.Index(fields=['date', 'start_slot', 'end_slot']),
+            models.Index(fields=['initiator']),
+            models.Index(fields=['booking_attempt']),
+            models.Index(fields=['group']),
+            models.Index(fields=['room']),
+            models.Index(fields=['subject'])
+        ]
+        db_table = 'events'
+        verbose_name = 'Событие'
+        verbose_name_plural = 'События'
+
+    def clean(self):
+        if self.start_slot > self.end_slot:
+            raise ValidationError('Начальный слот не может быть позже конечного слота.')
+
+    def __str__(self):
+        return f"Событие {self.id} ({self.date}, слоты {self.start_slot}-{self.end_slot}) - Инициатор: {self.initiator.email}"

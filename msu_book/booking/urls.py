@@ -2,7 +2,7 @@ from django.urls import path
 # Убираем общий импорт views, т.к. импортируем конкретные представления ниже
 # from . import views
 # Импортируем нужные представления и классы APIView
-from .views import FindRoomsForBookingAPIView, booking_finder_page, booking_attempt_form, BookingAttemptCreateView
+from .views import FindRoomsForBookingAPIView, booking_finder_page, booking_attempt_form, BookingAttemptCreateAPIView, BookingHistoryAPIView
 app_name = 'booking' # Хорошая практика - задать пространство имен для URL
 
 urlpatterns = [
@@ -16,7 +16,8 @@ urlpatterns = [
     # Оставляем другие рабочие URL
     path('find-page/', booking_finder_page, name='booking_finder_page'),
     path('book-form/', booking_attempt_form, name='booking_attempt_form'),
-    path('booking-attempt-create/', BookingAttemptCreateView.as_view(), name='booking-attempt-create'),
+    path('booking-attempt-create/', BookingAttemptCreateAPIView.as_view(), name='booking-attempt-create'),
+    path('history/', BookingHistoryAPIView.as_view(), name='booking-history'),
     # --- Добавьте сюда другие URL вашего приложения booking, если нужно ---
 ]
 

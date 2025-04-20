@@ -16,5 +16,5 @@ class TokenSerializer(serializers.Serializer):
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('user_id', 'email', 'first_name', 'second_name')  # Укажите поля, которые хотите вернуть
+        fields = ('user_id', 'email', 'first_name', 'second_name', 'booking_points', 'telegram_username', 'role')  # Укажите поля, которые хотите вернуть
         read_only_fields = ('id', 'username', 'email')  # Поля, которые не должны обновляться через API

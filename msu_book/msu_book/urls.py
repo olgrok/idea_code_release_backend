@@ -27,4 +27,6 @@ urlpatterns = [
     path('api/schema/swagger-ui/', SpectacularSwaggerView.as_view(url_name='schema'), name='swagger-ui'),
     path('import-rooms/', include('rooms.urls')),
     path('import-timetable/', include('timetable.urls')),
+    path('events/', include('events.urls')),
+    path('profile/', include('edit_user.urls'))
 ]

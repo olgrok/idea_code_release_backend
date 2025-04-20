@@ -43,19 +43,21 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'corsheaders',
+    'django_celery_beat',
     'main',
     'my_auth',
     'booking',
     'rest_framework',
     'drf_spectacular',
     'drf_spectacular_sidecar',
-    'rooms'
+    'rooms',
+    'events'
 ]
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -171,4 +173,37 @@ SPECTACULAR_SETTINGS = {
         'docExpansion': 'list', # Как раскрывать список операций при загрузке ('none', 'list', 'full')
     }
     # OTHER SETTINGS
+}
+
+# --- Настройки Celery ---
+# URL вашего брокера сообщений (например, Redis или RabbitMQ)
+CELERY_BROKER_URL = 'redis://localhost:6379/0' # Пример для Redis на локальной машине
+# URL для хранения результатов задач (можно использовать тот же брокер)
+CELERY_RESULT_BACKEND = 'redis://localhost:6379/0'
+CELERY_ACCEPT_CONTENT = ['json']
+CELERY_TASK_SERIALIZER = 'json'
+CELERY_RESULT_SERIALIZER = 'json'
+CELERY_TIMEZONE = 'Europe/Moscow' # Установите вашу таймзону
+CELERY_ENABLE_UTC = False # Рекомендуется False, если используете свою таймзону
+
+# --- Настройки Celery Beat (Планировщик задач) ---
+# Используем планировщик, хранящий расписание в базе данных Django
+CELERY_BEAT_SCHEDULER = 'django_celery_beat.schedulers:DatabaseScheduler'
+
+# Определение периодических задач
+CELERY_BEAT_SCHEDULE = {
+    'close-auctions-every-minute': {
+        'task': 'booking.close_auctions', # Полное имя задачи: 'имя_приложения.имя_задачи'
+        'schedule': 60.0,  # Запускать каждые 60 секунд
+        # 'args': (), # Аргументы для задачи, если нужны
+        # 'kwargs': {}, # Именованные аргументы, если нужны
+        'options': {
+            'expires': 55.0, # Задача должна завершиться за 55 сек, иначе будет считаться просроченной
+        },
+    },
+    # Можно добавить другие периодические задачи сюда
+    # 'cleanup-groups-daily': {
+    #     'task': 'booking.cleanup_inactive_groups',
+    #     'schedule': crontab(hour=3, minute=0), # Запускать каждый день в 3:00
+    # },
 }

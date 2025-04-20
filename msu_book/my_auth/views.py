@@ -20,6 +20,8 @@ from django.contrib.auth import get_user_model
 import requests
 from auth_lib.exceptions import AuthFailed
 from main.models import User as gg_user
+from main.models import PointTransaction
+from django.db.models import Sum
 # Create your views here.
 class ThirdPartyAuthView(APIView):
     """
@@ -112,9 +114,29 @@ class profile_view(GenericAPIView):
     serializer_class = UserSerializer  # Указываем сериализатор для пользователя
 
     def get(self, request):
-        user = request.user
-        serializer = self.serializer_class(user)  # Сериализуем объект пользователя
-        return Response(serializer.data)  # Возвращаем сериализованные данные
+        # Получаем основного пользователя Django
+        django_user = request.user 
+        try:
+            # Получаем связанный объект пользователя из main.models
+            user = gg_user.objects.get(user_id=django_user.id) 
+        except gg_user.DoesNotExist:
+            return Response({"error": "User profile not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Вычисляем баланс на основе транзакций
+        # Агрегируем сумму 'amount' для всех транзакций этого пользователя
+        # Если транзакций нет, aggregate вернет {'total_points': None}, поэтому используем or 0
+        calculated_points = PointTransaction.objects.filter(user=user).aggregate(
+            total_points=Sum('amount')
+        )['total_points'] or 0
+
+        # Сериализуем пользователя
+        serializer = self.serializer_class(user)
+        data = serializer.data
+        
+        # Заменяем значение booking_points в ответе на рассчитанное
+        data['booking_points'] = calculated_points
+
+        return Response(data) # Возвращаем измененные данные
 ''''@login_required
 def profile_view(request):
     token = request.session.get('auth_token')
